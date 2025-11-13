@@ -40,9 +40,9 @@ class RAGSystem:
             
             # Add course metadata to vector store for semantic search
             self.vector_store.add_course_metadata(course)
-            
-            # Add course content chunks to vector store
-            self.vector_store.add_course_content(course_chunks)
+
+            # Add course content chunks to vector store with lesson links
+            self.vector_store.add_course_content(course_chunks, course)
             
             return course, len(course_chunks)
         except Exception as e:
@@ -87,7 +87,7 @@ class RAGSystem:
                     if course and course.title not in existing_course_titles:
                         # This is a new course - add it to the vector store
                         self.vector_store.add_course_metadata(course)
-                        self.vector_store.add_course_content(course_chunks)
+                        self.vector_store.add_course_content(course_chunks, course)
                         total_courses += 1
                         total_chunks += len(course_chunks)
                         print(f"Added new course: {course.title} ({len(course_chunks)} chunks)")
