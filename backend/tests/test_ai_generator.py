@@ -330,20 +330,22 @@ class TestAIGeneratorEdgeCases:
             assert long_history in call_kwargs["system"]
 
     def test_none_tool_manager_with_tools(self, mock_anthropic_client_tool_use):
-        """Test tool_use response with None tool_manager"""
+        """Test tool_use response with None tool_manager is handled gracefully"""
         with patch('ai_generator.anthropic.Anthropic', return_value=mock_anthropic_client_tool_use):
             generator = AIGenerator(api_key="test-key", model="claude-sonnet-4")
 
             tools = [{"name": "test_tool"}]
 
             # Tool use requires tool_manager, but it's None
-            # This should cause an error when trying to execute
-            with pytest.raises(AttributeError):
-                generator.generate_response(
-                    query="Test",
-                    tools=tools,
-                    tool_manager=None
-                )
+            # New implementation handles this gracefully with error in tool_result
+            response = generator.generate_response(
+                query="Test",
+                tools=tools,
+                tool_manager=None
+            )
+
+            # Should not crash - verify response is generated
+            assert isinstance(response, str)
 
 
 @pytest.mark.unit
@@ -457,25 +459,21 @@ class TestAIGeneratorSequentialToolCalling:
                 tool_manager=mock_tool_manager_two_searches
             )
 
-            # Inspect API call arguments
+            # Verify API calls were made
+            assert mock_anthropic_client_two_sequential_tool_calls.messages.create.call_count == 3
+
+            # Inspect the final message history (messages are mutated in place, so all call_args point to same object)
             call_args_list = mock_anthropic_client_two_sequential_tool_calls.messages.create.call_args_list
-
-            # Round 1: Should have 1 message (user query)
-            round1_messages = call_args_list[0].kwargs['messages']
-            assert len(round1_messages) == 1
-            assert round1_messages[0]['role'] == 'user'
-
-            # Round 2: Should have 3 messages (user, assistant+tool_use, user+tool_results)
-            round2_messages = call_args_list[1].kwargs['messages']
-            assert len(round2_messages) == 3
-            assert round2_messages[0]['role'] == 'user'
-            assert round2_messages[1]['role'] == 'assistant'
-            assert round2_messages[2]['role'] == 'user'
-
-            # Final: Should have 5 messages
             final_messages = call_args_list[2].kwargs['messages']
+
+            # Final call should have 5 messages total (accumulated across all rounds)
             assert len(final_messages) == 5
+
+            # Verify message structure: user, assistant, user (round 1), assistant, user (round 2)
             assert [msg['role'] for msg in final_messages] == ['user', 'assistant', 'user', 'assistant', 'user']
+
+            # Verify first message is the original user query
+            assert final_messages[0]['content'] == 'Test query'
 
     def test_tool_error_in_second_round_continues(self, mock_anthropic_client_two_sequential_tool_calls):
         """Test: Tool error in round 2 doesn't crash, returns error as tool_result"""
