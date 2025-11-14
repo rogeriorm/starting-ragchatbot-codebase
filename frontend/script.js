@@ -77,10 +77,15 @@ async function sendMessage() {
             })
         });
 
-        if (!response.ok) throw new Error('Query failed');
+        // Handle HTTP errors with detailed messages
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorDetail = errorData.detail || 'Query failed to process';
+            throw new Error(errorDetail);
+        }
 
         const data = await response.json();
-        
+
         // Update session ID if new
         if (!currentSessionId) {
             currentSessionId = data.session_id;
@@ -91,9 +96,31 @@ async function sendMessage() {
         addMessage(data.answer, 'assistant', data.sources);
 
     } catch (error) {
-        // Replace loading message with error
+        // Replace loading message with helpful error message
         loadingMessage.remove();
-        addMessage(`Error: ${error.message}`, 'assistant');
+
+        console.error('Query error details:', error);
+
+        // Provide user-friendly error messages based on error type
+        let errorMessage = 'Failed to process your query.';
+        const errorStr = error.message.toLowerCase();
+
+        if (errorStr.includes('network') || errorStr.includes('fetch')) {
+            errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (errorStr.includes('timeout') || errorStr.includes('timed out')) {
+            errorMessage = 'Request timed out. Please try again.';
+        } else if (errorStr.includes('rate limit')) {
+            errorMessage = 'Too many requests. Please wait a moment before trying again.';
+        } else if (errorStr.includes('api key') || errorStr.includes('authentication')) {
+            errorMessage = 'Authentication error. Please contact support.';
+        } else if (errorStr.includes('connect') || errorStr.includes('connection')) {
+            errorMessage = 'Connection error. Please try again in a moment.';
+        } else if (error.message && error.message !== 'Query failed') {
+            // Use the actual error message if it's informative
+            errorMessage = error.message;
+        }
+
+        addMessage(`⚠️ ${errorMessage}`, 'assistant');
     } finally {
         chatInput.disabled = false;
         sendButton.disabled = false;
