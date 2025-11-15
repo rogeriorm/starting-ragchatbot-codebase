@@ -204,6 +204,64 @@ def mock_anthropic_client_second_call_fails():
     return mock_client
 
 
+@pytest.fixture
+def mock_anthropic_client_two_sequential_tool_calls():
+    """Mock Anthropic client for two sequential tool calls"""
+    mock_client = Mock()
+
+    # Round 1: First tool_use
+    round1_response = Mock()
+    tool_use_1 = Mock()
+    tool_use_1.type = "tool_use"
+    tool_use_1.id = "toolu_round1"
+    tool_use_1.name = "search_course_content"
+    tool_use_1.input = {"query": "MCP course outline"}
+    round1_response.content = [tool_use_1]
+    round1_response.stop_reason = "tool_use"
+
+    # Round 2: Second tool_use
+    round2_response = Mock()
+    tool_use_2 = Mock()
+    tool_use_2.type = "tool_use"
+    tool_use_2.id = "toolu_round2"
+    tool_use_2.name = "search_course_content"
+    tool_use_2.input = {"query": "context windows", "course_name": "Context"}
+    round2_response.content = [tool_use_2]
+    round2_response.stop_reason = "tool_use"
+
+    # Final: Text response after seeing both tool results
+    final_response = Mock()
+    final_response.content = [Mock(text="Based on the searches, both courses cover context window management.")]
+    final_response.stop_reason = "end_turn"
+
+    mock_client.messages.create.side_effect = [round1_response, round2_response, final_response]
+    return mock_client
+
+
+@pytest.fixture
+def mock_anthropic_client_one_tool_then_text():
+    """Mock Anthropic client for single tool call followed by direct text"""
+    mock_client = Mock()
+
+    # Round 1: Tool use
+    round1_response = Mock()
+    tool_use_1 = Mock()
+    tool_use_1.type = "tool_use"
+    tool_use_1.id = "toolu_single"
+    tool_use_1.name = "search_course_content"
+    tool_use_1.input = {"query": "What is RAG?"}
+    round1_response.content = [tool_use_1]
+    round1_response.stop_reason = "tool_use"
+
+    # Round 2: Direct text (no more tools needed)
+    round2_response = Mock()
+    round2_response.content = [Mock(text="RAG stands for Retrieval-Augmented Generation.")]
+    round2_response.stop_reason = "end_turn"
+
+    mock_client.messages.create.side_effect = [round1_response, round2_response]
+    return mock_client
+
+
 # ============================================================================
 # Mock ToolManager Fixtures
 # ============================================================================
@@ -226,6 +284,26 @@ def mock_tool_manager_exception():
     mock = Mock()
     mock.execute_tool.side_effect = Exception("Tool execution failed")
     mock.get_last_sources.return_value = []
+    return mock
+
+
+@pytest.fixture
+def mock_tool_manager_two_searches():
+    """Mock ToolManager that tracks multiple search executions"""
+    mock = Mock()
+
+    # Return different results for each search
+    mock.execute_tool.side_effect = [
+        "[MCP Course] Lesson 4: Context Window Management",  # First search
+        "[Context Course - Lesson 1] Managing large context windows"  # Second search
+    ]
+
+    mock.get_last_sources.return_value = [
+        {"text": "MCP Course - Lesson 4", "url": "https://example.com/mcp/lesson4"},
+        {"text": "Context Course - Lesson 1", "url": "https://example.com/context/lesson1"}
+    ]
+
+    mock.reset_sources.return_value = None
     return mock
 
 

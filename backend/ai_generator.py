@@ -9,7 +9,15 @@ class AIGenerator:
 
 Search Tool Usage:
 - Use the search tool **only** for questions about specific course content or detailed educational materials
-- **One search per query maximum**
+- **Up to two sequential searches per query** - use this capability when:
+  • The first search provides information needed to formulate a more specific second search
+  • You need to compare or correlate information from different courses or lessons
+  • Example: Search for a course outline to find a specific lesson topic, then search for that topic across all courses
+  • Example: Search for content in one lesson, then search for related content in another course
+- **Do NOT use multiple searches to**:
+  • Retry the same search with different wording
+  • Verify or double-check results from the first search
+  • Search for the same information in different ways
 - Synthesize search results into accurate, fact-based responses
 - If search yields no results, state this clearly without offering alternatives
 
@@ -43,15 +51,22 @@ Provide only the direct answer to what was asked.
     def generate_response(self, query: str,
                          conversation_history: Optional[str] = None,
                          tools: Optional[List] = None,
-                         tool_manager=None) -> str:
+                         tool_manager=None,
+                         max_rounds: int = 2) -> str:
         """
-        Generate AI response with optional tool usage and conversation context.
+        Generate AI response with optional sequential tool usage and conversation context.
+
+        Supports up to `max_rounds` sequential tool calls, allowing Claude to:
+        - Make an initial search to gather information
+        - Use results from the first search to inform a second search
+        - Synthesize a final answer from all gathered information
 
         Args:
             query: The user's question or request
             conversation_history: Previous messages for context
             tools: Available tools the AI can use
             tool_manager: Manager to execute tools
+            max_rounds: Maximum sequential tool calls allowed (default: 2)
 
         Returns:
             Generated response as string
@@ -59,131 +74,153 @@ Provide only the direct answer to what was asked.
         Raises:
             Exception: With descriptive message if API call or tool execution fails
         """
-
         try:
-            # Build system content efficiently - avoid string ops when possible
+            # Build system content efficiently
             system_content = (
                 f"{self.SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
                 if conversation_history
                 else self.SYSTEM_PROMPT
             )
 
-            # Prepare API call parameters efficiently
-            api_params = {
-                **self.base_params,
-                "messages": [{"role": "user", "content": query}],
-                "system": system_content
-            }
+            # Initialize message history for this query
+            messages = [{"role": "user", "content": query}]
 
-            # Add tools if available
-            if tools:
-                api_params["tools"] = tools
-                api_params["tool_choice"] = {"type": "auto"}
+            # Initialize round counter
+            round_count = 0
+            last_response = None
 
-            # Get response from Claude with error handling
-            try:
-                response = self.client.messages.create(**api_params)
-            except anthropic.APIConnectionError as e:
-                raise Exception(f"Failed to connect to Anthropic API. Please check your internet connection. Details: {str(e)}")
-            except anthropic.APITimeoutError as e:
-                raise Exception(f"Anthropic API request timed out. Please try again. Details: {str(e)}")
-            except anthropic.RateLimitError as e:
-                raise Exception(f"Anthropic API rate limit exceeded. Please wait a moment before trying again. Details: {str(e)}")
-            except anthropic.APIStatusError as e:
-                raise Exception(f"Anthropic API error (status {e.status_code}). Details: {str(e)}")
-            except anthropic.AuthenticationError as e:
-                raise Exception(f"Anthropic API authentication failed. Please check your API key. Details: {str(e)}")
-            except Exception as e:
-                raise Exception(f"Unexpected error calling Anthropic API: {str(e)}")
+            # Iterative tool execution loop
+            while round_count < max_rounds:
+                # Make API call with tools available
+                response = self._make_api_call(
+                    messages=messages,
+                    system=system_content,
+                    tools=tools if tools and tool_manager else None
+                )
 
-            # Handle tool execution if needed
-            if response.stop_reason == "tool_use" and tool_manager:
-                return self._handle_tool_execution(response, api_params, tool_manager)
+                last_response = response
 
-            # Return direct response
-            return response.content[0].text
+                # Check stop reason - if not tool_use, we have final answer
+                if response.stop_reason != "tool_use":
+                    # Claude provided direct answer - return it
+                    return response.content[0].text
+
+                # Tool use detected - execute tools
+                print(f"[AI_GENERATOR] Round {round_count + 1}/{max_rounds}: Executing tools")
+
+                # Add assistant's tool_use response to messages
+                messages.append({"role": "assistant", "content": response.content})
+
+                # Execute tools and get results
+                tool_results = self._execute_tools_and_build_results(
+                    response.content,
+                    tool_manager
+                )
+
+                # Add tool results to messages
+                if tool_results:
+                    messages.append({"role": "user", "content": tool_results})
+
+                # Increment round counter
+                round_count += 1
+
+            # Exited loop - max rounds reached
+            # Make final synthesis call WITHOUT tools
+            print(f"[AI_GENERATOR] Max rounds ({max_rounds}) reached, performing final synthesis")
+            final_response = self._make_api_call(
+                messages=messages,
+                system=system_content,
+                tools=None  # No tools for final synthesis
+            )
+
+            return final_response.content[0].text
 
         except Exception as e:
             # Log the error (in production, use proper logging)
             print(f"[AI_GENERATOR ERROR] generate_response failed: {str(e)}")
             raise
-    
-    def _handle_tool_execution(self, initial_response, base_params: Dict[str, Any], tool_manager):
+
+    def _make_api_call(self, messages: List[Dict[str, Any]], system: str,
+                       tools: Optional[List] = None):
         """
-        Handle execution of tool calls and get follow-up response.
+        Make a single API call to Claude with error handling.
 
         Args:
-            initial_response: The response containing tool use requests
-            base_params: Base API parameters
+            messages: Message history for the API call
+            system: System prompt content
+            tools: Optional tool definitions to include
+
+        Returns:
+            API response object
+
+        Raises:
+            Exception: With descriptive message if API call fails
+        """
+        # Build API parameters
+        api_params = {
+            **self.base_params,
+            "messages": messages,
+            "system": system
+        }
+
+        # Add tools if provided
+        if tools:
+            api_params["tools"] = tools
+            api_params["tool_choice"] = {"type": "auto"}
+
+        # Make API call with comprehensive error handling
+        try:
+            return self.client.messages.create(**api_params)
+        except anthropic.APIConnectionError as e:
+            raise Exception(f"Failed to connect to Anthropic API. Please check your internet connection. Details: {str(e)}")
+        except anthropic.APITimeoutError as e:
+            raise Exception(f"Anthropic API request timed out. Please try again. Details: {str(e)}")
+        except anthropic.RateLimitError as e:
+            raise Exception(f"Anthropic API rate limit exceeded. Please wait a moment before trying again. Details: {str(e)}")
+        except anthropic.APIStatusError as e:
+            raise Exception(f"Anthropic API error (status {e.status_code}). Details: {str(e)}")
+        except anthropic.AuthenticationError as e:
+            raise Exception(f"Anthropic API authentication failed. Please check your API key. Details: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error calling Anthropic API: {str(e)}")
+
+    def _execute_tools_and_build_results(self, content_blocks, tool_manager) -> List[Dict[str, Any]]:
+        """
+        Execute all tool calls from a response and build tool result messages.
+
+        Args:
+            content_blocks: Content blocks from API response (may contain tool_use)
             tool_manager: Manager to execute tools
 
         Returns:
-            Final response text after tool execution
-
-        Raises:
-            Exception: If tool execution or synthesis API call fails
+            List of tool result dictionaries in API format
         """
-        try:
-            # Start with existing messages
-            messages = base_params["messages"].copy()
+        tool_results = []
 
-            # Add AI's tool use response
-            messages.append({"role": "assistant", "content": initial_response.content})
+        for content_block in content_blocks:
+            if content_block.type == "tool_use":
+                try:
+                    # Execute the tool
+                    tool_result = tool_manager.execute_tool(
+                        content_block.name,
+                        **content_block.input
+                    )
 
-            # Execute all tool calls and collect results
-            tool_results = []
-            for content_block in initial_response.content:
-                if content_block.type == "tool_use":
-                    try:
-                        # Execute the tool with error handling
-                        tool_result = tool_manager.execute_tool(
-                            content_block.name,
-                            **content_block.input
-                        )
+                    # Format successful result
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": content_block.id,
+                        "content": tool_result
+                    })
 
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": content_block.id,
-                            "content": tool_result
-                        })
-                    except Exception as e:
-                        # Log tool execution error and return error as tool result
-                        # This allows Claude to see the error and respond appropriately
-                        print(f"[AI_GENERATOR ERROR] Tool '{content_block.name}' execution failed: {str(e)}")
-                        error_message = f"Tool execution failed: {str(e)}"
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": content_block.id,
-                            "content": error_message,
-                            "is_error": True
-                        })
+                except Exception as e:
+                    # Log error and return as tool result (graceful degradation)
+                    print(f"[AI_GENERATOR ERROR] Tool '{content_block.name}' execution failed: {str(e)}")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": content_block.id,
+                        "content": f"Tool execution failed: {str(e)}",
+                        "is_error": True
+                    })
 
-            # Add tool results as single message
-            if tool_results:
-                messages.append({"role": "user", "content": tool_results})
-
-            # Prepare final API call without tools
-            final_params = {
-                **self.base_params,
-                "messages": messages,
-                "system": base_params["system"]
-            }
-
-            # Get final response with error handling
-            try:
-                final_response = self.client.messages.create(**final_params)
-                return final_response.content[0].text
-            except anthropic.APIConnectionError as e:
-                raise Exception(f"Failed to connect to Anthropic API during synthesis. Details: {str(e)}")
-            except anthropic.APITimeoutError as e:
-                raise Exception(f"Anthropic API timed out during response synthesis. Details: {str(e)}")
-            except anthropic.RateLimitError as e:
-                raise Exception(f"Rate limit exceeded during response synthesis. Details: {str(e)}")
-            except anthropic.APIStatusError as e:
-                raise Exception(f"API error during synthesis (status {e.status_code}). Details: {str(e)}")
-            except Exception as e:
-                raise Exception(f"Unexpected error during response synthesis: {str(e)}")
-
-        except Exception as e:
-            print(f"[AI_GENERATOR ERROR] _handle_tool_execution failed: {str(e)}")
-            raise Exception(f"Tool execution and synthesis failed: {str(e)}")
+        return tool_results
