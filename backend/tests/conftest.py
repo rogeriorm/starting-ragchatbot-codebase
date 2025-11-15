@@ -370,4 +370,74 @@ def pytest_configure(config):
     """Configure pytest markers"""
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line("markers", "integration: Integration tests")
+    config.addinivalue_line("markers", "api: API endpoint tests")
     config.addinivalue_line("markers", "slow: Slow tests that interact with external services")
+
+
+# ============================================================================
+# API Test Fixtures
+# ============================================================================
+
+@pytest.fixture
+def mock_rag_system():
+    """Mock RAGSystem for API tests"""
+    mock = Mock()
+    mock.query.return_value = (
+        "RAG stands for Retrieval-Augmented Generation.",
+        [{"text": "Test Course - Lesson 0", "url": "https://example.com/lesson0"}]
+    )
+    mock.get_course_analytics.return_value = {
+        "total_courses": 3,
+        "course_titles": ["Course A", "Course B", "Course C"]
+    }
+    mock.session_manager = Mock()
+    mock.session_manager.create_session.return_value = "test_session_123"
+    return mock
+
+
+@pytest.fixture
+def mock_rag_system_error():
+    """Mock RAGSystem that raises errors"""
+    mock = Mock()
+    mock.query.side_effect = Exception("RAG system query failed")
+    mock.get_course_analytics.side_effect = Exception("Failed to get course analytics")
+    mock.session_manager = Mock()
+    mock.session_manager.create_session.return_value = "test_session_123"
+    return mock
+
+
+@pytest.fixture
+def sample_query_request():
+    """Sample query request data"""
+    return {
+        "query": "What is RAG?",
+        "session_id": None
+    }
+
+
+@pytest.fixture
+def sample_query_request_with_session():
+    """Sample query request with existing session"""
+    return {
+        "query": "Tell me more about vector databases",
+        "session_id": "existing_session_456"
+    }
+
+
+@pytest.fixture
+def sample_query_response():
+    """Expected query response structure"""
+    return {
+        "answer": "RAG stands for Retrieval-Augmented Generation.",
+        "sources": [{"text": "Test Course - Lesson 0", "url": "https://example.com/lesson0"}],
+        "session_id": "test_session_123"
+    }
+
+
+@pytest.fixture
+def sample_course_stats():
+    """Expected course stats response"""
+    return {
+        "total_courses": 3,
+        "course_titles": ["Course A", "Course B", "Course C"]
+    }
