@@ -62,28 +62,77 @@ body {
     color 0.3s ease;
 }
 
+/* Application Header */
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 1.5rem;
+  flex-shrink: 0;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 100%;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-logo {
+  width: 32px;
+  height: 32px;
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.header-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.header-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.header-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.3;
+}
+
 /* Theme Toggle Button */
 .theme-toggle {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 1000;
-  background: var(--surface);
+  background: var(--background);
   border: 1px solid var(--border-color);
   border-radius: 50%;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
-  box-shadow: var(--shadow);
+  flex-shrink: 0;
 }
 
 .theme-toggle:hover {
   background: var(--surface-hover);
   transform: scale(1.05);
+  border-color: var(--primary-color);
 }
 
 .theme-toggle:focus {
@@ -96,8 +145,8 @@ body {
 }
 
 .theme-toggle svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   color: var(--text-primary);
   transition: transform 0.3s ease;
 }
@@ -126,33 +175,12 @@ body {
 
 /* Container - Full Screen */
 .container {
-  height: 100vh;
+  height: calc(100vh - 60px);
   width: 100vw;
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0;
-}
-
-/* Header - Hidden */
-header {
-  display: none;
-}
-
-header h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin: 0;
-}
-
-.subtitle {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  margin-top: 0.5rem;
 }
 
 /* Main Content Area with Sidebar */
@@ -824,6 +852,37 @@ details[open] .suggested-header::before {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .app-header {
+    padding: 0.5rem 1rem;
+  }
+
+  .header-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .header-title {
+    font-size: 1.1rem;
+  }
+
+  .header-subtitle {
+    font-size: 0.7rem;
+  }
+
+  .theme-toggle {
+    width: 36px;
+    height: 36px;
+  }
+
+  .theme-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .container {
+    height: calc(100vh - 52px);
+  }
+
   .main-content {
     flex-direction: column;
   }
@@ -856,14 +915,6 @@ details[open] .suggested-header::before {
 
   .chat-main {
     order: 1;
-  }
-
-  header {
-    padding: 1rem;
-  }
-
-  header h1 {
-    font-size: 1.5rem;
   }
 
   .chat-messages {
